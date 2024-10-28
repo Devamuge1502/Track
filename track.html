@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logistics Optimization and Tracking System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #mapCanvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+            background: #a0c0e0;
+        }
+        #controls {
+            text-align: center;
+            margin-top: 10px;
+        }
+        .tracking-input {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 16px;
+            width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            margin-left: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        #trackingInfo, #result, #routes, #feedbackForm, #averageRatingDisplay {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .status {
+            background-color: #ffc107;
+            color: white;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        .location {
+            margin-top: 10px;
+        }
+        .route-option {
+            margin: 5px 0;
+        }
+        .feedback-input {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Logistics Optimization and Tracking System</h1>
+
+    <canvas id="mapCanvas" width="800" height="600"></canvas>
+    <div id="controls">
+        <input type="text" id="startPoint" placeholder="Enter start point (e.g., Ariyalur)">
+        <input type="text" id="endPoint" placeholder="Enter end point (e.g., Coimbatore)">
+
+        <div id="intermediateCitiesContainer">
+            <button onclick="addIntermediateCity()">Add Intermediate Place</button>
+        </div>
+        <div id="additionalPlacesContainer"></div>
+
+        <div>
+            <input type="checkbox" id="includeIntermediary" checked>
+            <label for="includeIntermediary">Include intermediary places in the final optimal route</label>
+        </div>
+
+        <button onclick="findOptimalRoute()">Find Optimal Route & Generate Tracking Number</button>
+        <div id="result"></div>
+        <div id="routes"></div>
+    </div>
+
+    <!-- Tracking Section -->
+    <div id="trackingContainer">
+        <h2>Track Your Order</h2>
+        <div class="tracking-input">
+            <input type="text" id="trackingNumber" placeholder="Enter Tracking Number">
+            <button onclick="trackOrder()">Track</button>
+        </div>
+        <div id="trackingInfo" style="display: none;">
+            <h2>Tracking Details for Order: <span id="orderId"></span></h2>
+            <div class="status" id="orderStatus">In Transit</div>
+            <div class="location">Current Location: <span id="currentLocation">Ariyalur</span></div>
+        </div>
+    </div>
+
+    <!-- Feedback Section -->
+    <div id="feedbackForm" style="display: none;">
+        <h2>Feedback on Selected Route</h2>
+        <p id="selectedRouteDisplay"></p>
+        <div>
+            <label>Rate this route:</label>
+            <div>
+                <label><input type="radio" name="rating" value="1"> 1 Star</label>
+                <label><input type="radio" name="rating" value="2"> 2 Stars</label>
+                <label><input type="radio" name="rating" value="3"> 3 Stars</label>
+                <label><input type="radio" name="rating" value="4"> 4 Stars</label>
+                <label><input type="radio" name="rating" value="5"> 5 Stars</label>
+            </div>
+        </div>
+        <textarea class="feedback-input" id="feedbackText" placeholder="Enter your feedback here..."></textarea>
+        <button onclick="submitFeedback()">Submit Feedback</button>
+    </div>
+
+    <div id="averageRatingDisplay" style="display: none;">
+        <h3>Average Rating for Selected Route: <span id="averageRating"></span></h3>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const cities = [
+        { name: 'Ariyalur', x: 150, y: 300 },
+        { name: 'Krishnagiri', x: 300, y: 100 },
+        { name: 'Coimbatore', x: 600, y: 150 },
+        { name: 'Madurai', x: 450, y: 500 },
+        { name: 'Salem', x: 500, y: 200 },
+        { name: 'Namakkal', x: 350, y: 350 }
+    ];
+    const cityMap = new Map();
+    cities.forEach(city => cityMap.set(city.name, city));
+
+    let currentTrackingNumber = '';
+    let optimalRoute = '';
+    let deliveryStatus = '';
+    let deliveryInterval;
+    let trackingMarker = null;
+
+    function drawMap() {
+        ctx.fillStyle = '#a0c0e0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        cities.forEach(city => {
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(city.x, city.y, 10, 0, Math.PI * 2, true);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.font = '12px Arial';
+            ctx.fillText(city.name, city.x + 12, city.y - 12);
+        });
+    }
+
+    function addIntermediateCity() {
+        const container = document.getElementById('additionalPlacesContainer');
+        const inputContainer = document.createElement('div');
+        inputContainer.className = 'input-container';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Enter intermediate place';
+        input.className = 'intermediateCity';
+        inputContainer.appendChild(input);
+        const removeButton = document.createElement('button');
+        removeButton.textContent = 'Remove';
+        removeButton.onclick = function() {
+            container.removeChild(inputContainer);
+        };
+        inputContainer.appendChild(removeButton);
+        container.appendChild(inputContainer);
+    }
+
+    function distance(p1, p2) {
+        return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+    }
+
+    function permute(arr) {
+        const result = [];
+        function permuteHelper(tempArr, remainingArr) {
+            if (remainingArr.length === 0) result.push(tempArr);
+            for (let i = 0; i < remainingArr.length; i++) {
+                permuteHelper(tempArr.concat(remainingArr[i]), remainingArr.slice(0, i).concat(remainingArr.slice(i + 1)));
+            }
+        }
+        permuteHelper([], arr);
+        return result;
+    }
+
+    function generateTrackingNumber() {
+        return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    const orders = {};
+
+    function findOptimalRoute() {
+        const startName = document.getElementById('startPoint').value;
+        const endName = document.getElementById('endPoint').value;
+        const intermediateInputs = document.getElementsByClassName('intermediateCity');
+        const includeIntermediary = document.getElementById('includeIntermediary').checked;
+        const startPoint = cityMap.get(startName);
+        const endPoint = cityMap.get(endName);
+        if (!startPoint || !endPoint) {
+            alert('Invalid start or end point.');
+            return;
+        }
+        const intermediateCities = [];
+        for (let input of intermediateInputs) {
+            const city = cityMap.get(input.value);
+            if (city && !intermediateCities.includes(city)) intermediateCities.push(city);
+        }
+        const allRoutes = permute(intermediateCities);
+        let bestRoute = [], minCost = Infinity, minTime = Infinity, minDistance = Infinity;
+        const costPerDistanceUnit = 0.1, speed = 5;
+        const allPaths = [];
+        allRoutes.forEach(route => {
+            const fullRoute = [startPoint, ...route, endPoint];
+            const routeDistance = calculateRouteDistance(fullRoute);
+            const routeTime = routeDistance / speed;
+            const routeCost = routeDistance * costPerDistanceUnit;
+            allPaths.push({ route: fullRoute, distance: routeDistance, time: routeTime, cost: routeCost });
+            if (includeIntermediary && (routeCost < minCost || 
+                (routeCost === minCost && routeTime < minTime) ||
+                (routeCost === minCost && routeTime === minTime && routeDistance < minDistance))) {
+                minCost = routeCost;
+                minTime = routeTime;
+                minDistance = routeDistance;
+                bestRoute = fullRoute;
+            }
+        });
+        if (!includeIntermediary) {
+            const directRoute = [startPoint, endPoint];
+            const directDistance = calculateRouteDistance(directRoute);
+            const directTime = directDistance / speed;
+            const directCost = directDistance * costPerDistanceUnit;
+            if (directCost < minCost || 
+                (directCost === minCost && directTime < minTime) ||
+                (directCost === minCost && directTime === minTime && directDistance < minDistance)) {
+                minCost = directCost;
+                minTime = directTime;
+                minDistance = directDistance;
+                bestRoute = directRoute;
+            }
+        }
+        drawMap();
+        allPaths.forEach(path => drawRoute(path.route, 'gray'));
+        drawRoute(bestRoute, 'blue');
+
+        currentTrackingNumber = generateTrackingNumber();
+        orders[currentTrackingNumber] = { status: "In Transit", currentLocation: bestRoute[0].name, route: bestRoute, feedback: [] };
+        optimalRoute = bestRoute.map(p => p.name).join(' -> ');
+        document.getElementById('result').innerHTML = 
+            `<strong>Optimal Route:</strong><br>
+            ${optimalRoute}<br>
+            Distance: ${minDistance.toFixed(2)} units<br>
+            Time: ${minTime.toFixed(2)} units<br>
+            Cost: ${minCost.toFixed(2)} units`;
+
+        alert(`Your order has been placed! Tracking Number: ${currentTrackingNumber}`);
+
+        // Show all possible paths
+        const routesDisplay = allPaths.map(path => 
+            `<div class="route-option">
+                Route: ${path.route.map(p => p.name).join(' -> ')}<br>
+                Distance: ${path.distance.toFixed(2)} units<br>
+                Time: ${path.time.toFixed(2)} units<br>
+                Cost: ${path.cost.toFixed(2)} units
+            </div>`
+        ).join('');
+        document.getElementById('routes').innerHTML = `<strong>All Possible Routes:</strong>${routesDisplay}`;
+
+        // Start delivery status update
+        startDeliveryStatusUpdate(minTime);
+        
+        // Show feedback form with selected route
+        document.getElementById('selectedRouteDisplay').textContent = `Selected Route: ${optimalRoute}`;
+        document.getElementById('feedbackForm').style.display = 'block';
+    }
+
+    function calculateRouteDistance(route) {
+        return route.reduce((total, curr, idx) => total + (idx > 0 ? distance(route[idx - 1], curr) : 0), 0);
+    }
+
+    function drawRoute(route, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(route[0].x, route[0].y);
+        for (let i = 1; i < route.length; i++) ctx.lineTo(route[i].x, route[i].y);
+        ctx.stroke();
+    }
+
+    function startDeliveryStatusUpdate(deliveryTime) {
+        deliveryStatus = 'In Transit';
+        let currentLocationIndex = 0;
+
+        // Draw the initial tracking marker
+        trackingMarker = { x: orders[currentTrackingNumber].route[0].x, y: orders[currentTrackingNumber].route[0].y };
+        drawMarker();
+
+        // Update status after the total time of the journey
+        deliveryInterval = setInterval(() => {
+            if (currentLocationIndex < orders[currentTrackingNumber].route.length) {
+                currentLocationIndex++;
+                if (currentLocationIndex < orders[currentTrackingNumber].route.length) {
+                    orders[currentTrackingNumber].currentLocation = orders[currentTrackingNumber].route[currentLocationIndex].name;
+                    updateTrackingInfo();
+                    
+                    // Move tracking marker
+                    trackingMarker.x = orders[currentTrackingNumber].route[currentLocationIndex].x;
+                    trackingMarker.y = orders[currentTrackingNumber].route[currentLocationIndex].y;
+                    drawMarker();
+                } else {
+                    deliveryStatus = 'Delivered';
+                    orders[currentTrackingNumber].status = deliveryStatus;
+                    clearInterval(deliveryInterval);
+                    updateTrackingInfo();
+                }
+            }
+        }, (deliveryTime * 1000) / orders[currentTrackingNumber].route.length);
+    }
+
+    function drawMarker() {
+        ctx.fillStyle = 'blue';
+        ctx.beginPath();
+        ctx.arc(trackingMarker.x, trackingMarker.y, 8, 0, Math.PI * 2, true);
+        ctx.fill();
+    }
+
+    function updateTrackingInfo() {
+        document.getElementById('orderId').textContent = currentTrackingNumber;
+        document.getElementById('orderStatus').textContent = orders[currentTrackingNumber].status;
+        document.getElementById('currentLocation').textContent = orders[currentTrackingNumber].currentLocation;
+        document.getElementById('trackingInfo').style.display = 'block';
+    }
+
+    function trackOrder() {
+        const trackingNumber = document.getElementById('trackingNumber').value;
+        const trackingInfo = orders[trackingNumber];
+        if (trackingInfo) {
+            document.getElementById('orderId').textContent = trackingNumber;
+            document.getElementById('orderStatus').textContent = trackingInfo.status;
+            document.getElementById('currentLocation').textContent = trackingInfo.currentLocation;
+            document.getElementById('trackingInfo').style.display = 'block';
+        } else {
+            alert('Invalid tracking number');
+        }
+    }
+
+    function submitFeedback() {
+        const feedback = document.getElementById('feedbackText').value;
+        const rating = document.querySelector('input[name="rating"]:checked');
+        
+        if (feedback && currentTrackingNumber && rating) {
+            const ratingValue = parseInt(rating.value);
+            
+            // Store the feedback and rating
+            if (!orders[currentTrackingNumber].feedback) {
+                orders[currentTrackingNumber].feedback = [];
+            }
+            orders[currentTrackingNumber].feedback.push({ feedback, rating: ratingValue });
+            
+            // Calculate average rating
+            const averageRating = calculateAverageRating(orders[currentTrackingNumber].feedback);
+            document.getElementById('averageRating').textContent = averageRating.toFixed(1);
+            document.getElementById('averageRatingDisplay').style.display = 'block';
+            
+            alert(`Feedback submitted for Tracking Number ${currentTrackingNumber}: ${feedback} (Rating: ${ratingValue} stars)`);
+            document.getElementById('feedbackText').value = '';
+            document.getElementById('feedbackForm').style.display = 'none';
+        } else {
+            alert('Please provide your feedback and rating.');
+        }
+    }
+
+    function calculateAverageRating(feedbackArray) {
+        const total = feedbackArray.reduce((sum, entry) => sum + entry.rating, 0);
+        return total / feedbackArray.length;
+    }
+
+    window.onload = drawMap;
+</script>
+
+</body>
+</html>
